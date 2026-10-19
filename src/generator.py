@@ -97,7 +97,7 @@ class ContentGenerator:
         try:
             from groq import Groq, RateLimitError, APIConnectionError, APIStatusError
 
-            client = Groq(api_key=self.config.groq_api_key)
+            client = Groq(api_key=self.config.groq_api_key, timeout=30.0)
             completion = client.chat.completions.create(
                 model=chosen_model,
                 messages=[
@@ -135,7 +135,7 @@ class ContentGenerator:
         logger.info(f"Generating content locally via Ollama ({chosen_model}) at {self.config.ollama_base_url}...")
 
         try:
-            resp = requests.post(url, json=payload, timeout=15)
+            resp = requests.post(url, json=payload, timeout=60)
         except requests.RequestException as e:
             raise RuntimeError(
                 f"Could not connect to Ollama at {self.config.ollama_base_url}. "

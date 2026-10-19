@@ -18,7 +18,7 @@ Write-Host "Registering Windows Task Scheduler Job: '$TaskName'..." -ForegroundC
 Write-Host "Daily Posting Time: $Time (Asia/Kolkata) - 6:00 PM IST" -ForegroundColor Cyan
 Write-Host "Target Script:      $RunnerScript" -ForegroundColor Cyan
 
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$RunnerScript`""
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$RunnerScript`""
 $Trigger = New-ScheduledTaskTrigger -Daily -At $Time
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Minutes 45)
 

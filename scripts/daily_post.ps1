@@ -27,8 +27,32 @@ if (-not (Test-Path $VenvPython)) {
     exit 1
 }
 
+# Wait for active network connection and DNS resolution (essential when laptop wakes from sleep)
+Write-Output "[INFO] Checking network connectivity and DNS resolution..." | Tee-Object -FilePath $LogFile -Append
+$networkReady = $false
+$maxAttempts = 18  # 18 * 5 seconds = 90 seconds max wait
+for ($i = 1; $i -le $maxAttempts; $i++) {
+    try {
+        $dnsTest = [System.Net.Dns]::GetHostAddresses("api.linkedin.com")
+        if ($dnsTest.Length -gt 0) {
+            $networkReady = $true
+            Write-Output "[INFO] Network connection confirmed active (DNS resolved api.linkedin.com)." | Tee-Object -FilePath $LogFile -Append
+            break
+        }
+    } catch {
+        # DNS not ready yet
+    }
+    Write-Output "[INFO] Waiting for Wi-Fi / network connection to establish (attempt $i of $maxAttempts)..." | Tee-Object -FilePath $LogFile -Append
+    Start-Sleep -Seconds 5
+}
+
+if (-not $networkReady) {
+    Write-Output "[ERROR] Network unavailable after 90 seconds. Aborting daily run to prevent corrupt drafts." | Tee-Object -FilePath $LogFile -Append
+    exit 1
+}
+
 # Note regarding Ollama / Laptop Sleep
-Write-Output "[INFO] Note: Local Ollama requires the laptop to be awake and ollama service running." | Tee-Object -FilePath $LogFile -Append
+Write-Output "[INFO] Network verified. Local Ollama available or cloud AI fallback ready." | Tee-Object -FilePath $LogFile -Append
 
 # Execute daily-run workflow
 Push-Location $ProjectRoot
