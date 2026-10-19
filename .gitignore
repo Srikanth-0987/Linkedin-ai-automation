@@ -17,6 +17,9 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+*.db
+*.sqlite
+*.sqlite3
 
 # Node
 node_modules/
@@ -32,6 +35,8 @@ cookies.json
 sessions/
 logs/
 *.log
+images/
+output/
 
 # IDE & OS
 .vscode/
