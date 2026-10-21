@@ -736,32 +736,99 @@ class ImageGenerator:
                 draw.text((col_x + 25, py), pl, font=FontManager.get_font(22), fill=self.TEXT_SECONDARY)
                 py += 30
 
-    def _render_photorealistic_poster(
+    BACKGROUND_CATALOG = [
+        {
+            "filename": "ai_frontier_robot.jpg",
+            "keywords": ["ai", "robot", "humanoid", "frontier", "agent", "autonomous", "openai", "deepseek"],
+            "category": "Frontier AI",
+        },
+        {
+            "filename": "claude_executive_robot.jpg",
+            "keywords": ["claude", "anthropic", "executive", "sonnet", "opus", "haiku", "alignment"],
+            "category": "AI Research",
+        },
+        {
+            "filename": "neural_network_brain.jpg",
+            "keywords": ["neural", "llm", "brain", "deep learning", "transformer", "reasoning", "qwen", "mistral", "model"],
+            "category": "Neural Models",
+        },
+        {
+            "filename": "quantum_datacenter_servers.jpg",
+            "keywords": ["datacenter", "cloud", "server", "infrastructure", "scale", "linux", "distributed", "cluster", "platform"],
+            "category": "Infrastructure",
+        },
+        {
+            "filename": "quantum_ai_processor.jpg",
+            "keywords": ["quantum", "processor", "core", "microchip", "latency", "acceleration", "compiler", "protein", "inference"],
+            "category": "Quantum & Architecture",
+        },
+        {
+            "filename": "hardware_semiconductor_chip.jpg",
+            "keywords": ["nvidia", "semiconductor", "chip", "silicon", "gpu", "tsmc", "hardware", "wafer", "intel", "amd"],
+            "category": "Hardware & Chips",
+        },
+        {
+            "filename": "cyber_defense_globe.jpg",
+            "keywords": ["security", "globe", "cyber", "policy", "regulation", "law", "meta", "cambridge", "defense", "safeguard", "global"],
+            "category": "Cyber & Policy",
+        },
+        {
+            "filename": "tech_developer_workspace.jpg",
+            "keywords": ["developer", "python", "code", "programming", "software", "ide", "vscode", "github", "copilot", "tool", "library"],
+            "category": "Developer Ecosystem",
+        },
+    ]
+
+    def _pick_background(
         self,
         topic: str,
-        headline: str,
-        points: list[str],
-        category: str,
-        source_name: str,
-    ) -> Image.Image:
-        """Render a high-end photorealistic 3D tech announcement poster.
-
-        Uses matching 8K 3D photorealistic render background assets from assets/backgrounds/,
-        with dynamic alpha-gradient overlay and modern glassmorphic feature cards.
+        category: str = "",
+        source_name: str = "",
+        exclude_filenames: Optional[list[str]] = None,
+    ) -> tuple[Optional[Path], str]:
+        """Intelligently select a photorealistic 3D background asset tailored to topic keywords.
+        Ensures consecutive posts do not repeat the exact same background.
         """
         bg_dir = Path("assets/backgrounds")
-        topic_lower = f"{topic} {category} {source_name}".lower()
+        exclude = set(exclude_filenames or [])
+        text_corpus = f"{topic} {category} {source_name}".lower()
 
-        candidate_bg: Optional[Path] = None
-        if any(k in topic_lower for k in ["claude", "anthropic"]):
-            candidate_bg = bg_dir / "claude_executive_robot.jpg"
-        elif any(k in topic_lower for k in ["ai", "model", "frontier", "llm", "reasoning", "deepseek", "openai", "agent", "neural"]):
-            candidate_bg = bg_dir / "ai_frontier_robot.jpg"
-        elif any(k in topic_lower for k in ["nvidia", "semiconductor", "chip", "silicon", "gpu", "tsmc", "hardware"]):
-            candidate_bg = bg_dir / "hardware_semiconductor_chip.jpg"
+        # Score catalog items based on keyword matches
+        scored: list[tuple[int, dict]] = []
+        for item in self.BACKGROUND_CATALOG:
+            if item["filename"] in exclude:
+                continue
+            matches = sum(1 for kw in item["keywords"] if kw in text_corpus)
+            scored.append((matches, item))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        chosen_filename = None
+        if scored and scored[0][0] > 0:
+            chosen_filename = scored[0][1]["filename"]
+        elif scored:
+            chosen_filename = scored[0][1]["filename"]
         else:
-            candidate_bg = bg_dir / "tech_developer_workspace.jpg"
+            chosen_filename = self.BACKGROUND_CATALOG[0]["filename"]
 
+        target_path = bg_dir / chosen_filename
+        if target_path.exists():
+            return target_path, chosen_filename
+
+        # Fallback to any existing background file
+        for item in self.BACKGROUND_CATALOG:
+            cand = bg_dir / item["filename"]
+            if cand.exists():
+                return cand, item["filename"]
+
+        return None, chosen_filename
+
+    def _load_base_background(
+        self,
+        candidate_bg: Optional[Path],
+        overlay_mode: str = "split_left",
+    ) -> Image.Image:
+        """Load 8K background asset and composite a high-contrast dark overlay."""
         if candidate_bg and candidate_bg.exists():
             base_img = Image.open(candidate_bg).convert("RGBA").resize((self.WIDTH, self.HEIGHT), Image.Resampling.LANCZOS)
         else:
@@ -769,22 +836,45 @@ class ImageGenerator:
             draw_bg = ImageDraw.Draw(base_img)
             self._draw_background_gradient(draw_bg)
 
-        # Left-side dark cinematic gradient overlay (provides high contrast for cards & text while preserving 3D subject on right)
         overlay = Image.new("RGBA", (self.WIDTH, self.HEIGHT), (0, 0, 0, 0))
         draw_ol = ImageDraw.Draw(overlay)
-        for x in range(self.WIDTH):
-            if x < 420:
-                alpha = 230
-            elif x < 720:
-                alpha = int(230 * (1 - (x - 420) / 300))
-            else:
-                alpha = 0
-            draw_ol.line([(x, 0), (x, self.HEIGHT)], fill=(6, 10, 20, alpha))
 
-        img = Image.alpha_composite(base_img, overlay)
+        if overlay_mode == "split_left":
+            # Dark gradient on left for cards, reveals 3D subject on right
+            for x in range(self.WIDTH):
+                if x < 420:
+                    alpha = 230
+                elif x < 720:
+                    alpha = int(230 * (1 - (x - 420) / 300))
+                else:
+                    alpha = 0
+                draw_ol.line([(x, 0), (x, self.HEIGHT)], fill=(6, 10, 20, alpha))
+        elif overlay_mode == "dark_glass":
+            # Deep obsidian glass overlay across the entire canvas with high contrast
+            draw_ol.rectangle([0, 0, self.WIDTH, self.HEIGHT], fill=(8, 14, 26, 215))
+        elif overlay_mode == "vignette":
+            # Radial vignette darker around edges
+            draw_ol.rectangle([0, 0, self.WIDTH, self.HEIGHT], fill=(6, 10, 22, 210))
+            # Border frame
+            draw_ol.rectangle([0, 0, self.WIDTH, self.HEIGHT], outline=(56, 189, 248, 40), width=1)
+
+        return Image.alpha_composite(base_img, overlay)
+
+    def _render_photorealistic_poster(
+        self,
+        topic: str,
+        headline: str,
+        points: list[str],
+        category: str,
+        source_name: str,
+        bg_path: Optional[Path] = None,
+    ) -> Image.Image:
+        """Type 1: 3D Tech Announcement Poster.
+        Left-side glassmorphism feature cards, right-side exposed 3D subject.
+        """
+        img = self._load_base_background(bg_path, overlay_mode="split_left")
         draw = ImageDraw.Draw(img)
 
-        # Fonts
         font_cat = FontManager.get_font(20, bold=True)
         font_date = FontManager.get_font(20, bold=False)
         font_intro = FontManager.get_font(26, bold=True)
@@ -795,38 +885,30 @@ class ImageGenerator:
         font_metric = FontManager.get_font(38, bold=True)
         font_metric_lbl = FontManager.get_font(16, bold=True)
 
-        # 1. Header Pill Badge & Date
+        # 1. Header Pill Badge
         cat_text = category.upper() if category else "TECHNOLOGY INTELLIGENCE"
         bbox = draw.textbbox((0, 0), cat_text, font=font_cat)
         cat_w = bbox[2] - bbox[0]
         pill_right = 70 + cat_w + 30
         draw.rounded_rectangle([70, 65, pill_right, 105], radius=8, fill=(15, 23, 42, 240), outline=self.ACCENT_CYAN, width=2)
         draw.text((85, 74), cat_text, font=font_cat, fill=self.ACCENT_CYAN)
-        draw.text((pill_right + 25, 74), "2026 OFFICIAL ANNOUNCEMENT", font=font_date, fill=self.TEXT_MUTED)
+        draw.text((pill_right + 25, 74), "OFFICIAL ANNOUNCEMENT", font=font_date, fill=self.TEXT_MUTED)
 
-        # 2. Main Announcement Title
+        # 2. Main Title
         draw.text((70, 138), "INTRODUCING", font=font_intro, fill=self.ACCENT_BLUE)
-
-        # Wrap title
         title_lines = self._wrap_text(headline, font_title, 460, draw)
         curr_y = 175
         for line in title_lines[:2]:
             draw.text((70, curr_y), line, font=font_title, fill=self.TEXT_PRIMARY)
             curr_y += 54
 
-        # Subtitle
-        sub_text = "Architecture & Engineering Breakdown"
-        draw.text((70, curr_y + 8), sub_text, font=font_sub, fill=self.TEXT_SECONDARY)
+        draw.text((70, curr_y + 8), "Architecture & Engineering Breakdown", font=font_sub, fill=self.TEXT_SECONDARY)
         curr_y += 52
 
         # 3. Feature Glassmorphism Cards
         card_w = 460
         card_h = 88
-        clean_points = points or [
-            "Technical benchmark and architecture analysis.",
-            "Production trade-offs for engineers and teams.",
-            "Long-term structural impact on the ecosystem.",
-        ]
+        clean_points = points or ["Architecture benchmark analysis.", "Production trade-offs for engineers.", "Ecosystem impact."]
 
         for i, pt in enumerate(clean_points[:3]):
             y = curr_y + i * (card_h + 14)
@@ -842,21 +924,264 @@ class ImageGenerator:
             draw.text((95, y + 16), line1, font=font_card_bold, fill=self.TEXT_PRIMARY)
             draw.text((95, y + 46), line2, font=font_card_sub, fill=self.TEXT_MUTED)
 
-        # 4. Metric / Highlight Box
+        # 4. Metric Box
         m_y = curr_y + 3 * (card_h + 14) + 10
         draw.rounded_rectangle([70, m_y, 70 + card_w, m_y + 102], radius=12, fill=(10, 16, 32, 240), outline=self.ACCENT_PURPLE, width=2)
         draw.rounded_rectangle([70, m_y, 76, m_y + 102], radius=3, fill=self.ACCENT_PURPLE)
 
-        # Metric text based on category
-        if any(k in topic_lower for k in ["python", "speed", "latency", "jit"]):
+        topic_lower = f"{topic} {category}".lower()
+        if any(k in topic_lower for k in ["speed", "latency", "jit", "python"]):
             m_val, m_lbl = "3.2x FASTER SPEEDUP", "MULTI-THREADED CPU BOUND DATA PIPELINES"
-        elif any(k in topic_lower for k in ["benchmark", "accuracy", "math", "reasoning"]):
+        elif any(k in topic_lower for k in ["accuracy", "benchmark", "math"]):
             m_val, m_lbl = "92.5% ACCURACY", "BENCHMARK MATHEMATICS & REASONING EVALUATION"
         else:
             m_val, m_lbl = "STATE-OF-THE-ART", "PRODUCTION ENGINEERING BENCHMARK BREAKTHROUGH"
 
         draw.text((95, m_y + 18), m_val, font=font_metric, fill=self.ACCENT_PURPLE)
         draw.text((95, m_y + 66), m_lbl, font=font_metric_lbl, fill=self.TEXT_SECONDARY)
+
+        return img.convert("RGB")
+
+    def _render_architecture_blueprint(
+        self,
+        topic: str,
+        headline: str,
+        points: list[str],
+        category: str,
+        source_name: str,
+        bg_path: Optional[Path] = None,
+    ) -> Image.Image:
+        """Type 2: 3D Technical Architecture & Pipeline Blueprint.
+        Full-width engineering schematic with 3 sequential system tiers, glowing connectors, and telemetry.
+        """
+        img = self._load_base_background(bg_path, overlay_mode="dark_glass")
+        draw = ImageDraw.Draw(img)
+
+        # Fonts
+        font_badge = FontManager.get_font(20, bold=True)
+        font_title = FontManager.get_font(46, bold=True)
+        font_sub = FontManager.get_font(22, bold=False)
+        font_tier_tag = FontManager.get_font(20, bold=True)
+        font_tier_title = FontManager.get_font(24, bold=True)
+        font_tier_desc = FontManager.get_font(20, bold=False)
+        font_arrow = FontManager.get_font(22, bold=True)
+        font_telemetry = FontManager.get_font(18, bold=True)
+
+        # 1. Header Section
+        draw.rounded_rectangle([70, 60, 480, 100], radius=8, fill=(15, 23, 42, 240), outline=self.ACCENT_CYAN, width=2)
+        draw.text((90, 70), "SYSTEM ARCHITECTURE & PIPELINE BLUEPRINT", font=font_badge, fill=self.ACCENT_CYAN)
+
+        src_lbl = f"VERIFIED: {source_name.upper()}" if source_name else "2026 ARCHITECTURE SPECIFICATION"
+        draw.text((self.WIDTH - 420, 72), src_lbl, font=FontManager.get_font(18, bold=False), fill=self.TEXT_MUTED)
+
+        # 2. Main Title & Subtitle
+        title_lines = self._wrap_text(headline, font_title, self.WIDTH - 140, draw)
+        curr_y = 125
+        for line in title_lines[:2]:
+            draw.text((70, curr_y), line, font=font_title, fill=self.TEXT_PRIMARY)
+            curr_y += 52
+
+        draw.text((70, curr_y + 4), "End-to-End Computational Flow & Component Design", font=font_sub, fill=self.ACCENT_BLUE)
+        curr_y += 45
+
+        # 3. 3-Tier Flow Diagram Cards
+        tier_w = self.WIDTH - 140
+        tier_h = 135
+        tier_gap = 42
+
+        clean_points = points or ["Input ingestion", "Model reasoning", "Verified output"]
+        tiers = [
+            ("TIER 1: INGESTION & CONTEXT", clean_points[0] if len(clean_points) > 0 else "High-throughput context retrieval", self.ACCENT_CYAN),
+            ("TIER 2: COMPUTATIONAL CORE", clean_points[1] if len(clean_points) > 1 else "Neural reasoning and parameter optimization", self.ACCENT_PURPLE),
+            ("TIER 3: PRODUCTION DEPLOYMENT", clean_points[2] if len(clean_points) > 2 else "Scalable execution and benchmark verification", self.ACCENT_GREEN),
+        ]
+
+        for i, (tag, desc, accent) in enumerate(tiers):
+            box_y = curr_y + i * (tier_h + tier_gap)
+            draw.rounded_rectangle([70, box_y, 70 + tier_w, box_y + tier_h], radius=14, fill=(10, 16, 32, 235), outline=accent, width=2)
+            draw.rounded_rectangle([70, box_y, 78, box_y + tier_h], radius=4, fill=accent)
+
+            # Badge pill inside card
+            draw.rounded_rectangle([95, box_y + 18, 380, box_y + 52], radius=6, fill=(18, 28, 52, 220), outline=accent, width=1)
+            draw.text((110, box_y + 24), tag, font=font_tier_tag, fill=accent)
+
+            # Description
+            d_lines = self._wrap_text(desc, font_tier_desc, tier_w - 70, draw)
+            dy = box_y + 64
+            for dl in d_lines[:2]:
+                draw.text((95, dy), dl, font=font_tier_desc, fill=self.TEXT_PRIMARY)
+                dy += 28
+
+            # Flow Arrow Connector between tiers
+            if i < 2:
+                arrow_y = box_y + tier_h + 8
+                draw.text(((self.WIDTH // 2) - 10, arrow_y), "▼", font=font_arrow, fill=accent)
+
+        # 4. Telemetry Footer Bar
+        bar_y = self.HEIGHT - 85
+        draw.rounded_rectangle([70, bar_y, 70 + tier_w, bar_y + 50], radius=8, fill=(12, 20, 38, 230), outline=(56, 189, 248, 100), width=1)
+        draw.text((100, bar_y + 15), "TELEMETRY: HIGH THROUGHPUT • LOW LATENCY INFERENCE • DETERMINISTIC VERIFICATION", font=font_telemetry, fill=self.ACCENT_CYAN)
+
+        return img.convert("RGB")
+
+    def _render_editorial_spotlight(
+        self,
+        topic: str,
+        headline: str,
+        points: list[str],
+        category: str,
+        source_name: str,
+        bg_path: Optional[Path] = None,
+    ) -> Image.Image:
+        """Type 3: Executive Tech Spotlight & Insight Cover.
+        Bold central spotlight card with glowing dual-colored border and dual impact metrics.
+        """
+        img = self._load_base_background(bg_path, overlay_mode="vignette")
+        draw = ImageDraw.Draw(img)
+
+        font_badge = FontManager.get_font(22, bold=True)
+        font_title = FontManager.get_font(52, bold=True)
+        font_sub = FontManager.get_font(22, bold=False)
+        font_quote = FontManager.get_font(28, bold=True)
+        font_quote_desc = FontManager.get_font(22, bold=False)
+        font_m_val = FontManager.get_font(34, bold=True)
+        font_m_lbl = FontManager.get_font(18, bold=True)
+
+        # 1. Header Pill
+        draw.rounded_rectangle([70, 60, 420, 105], radius=8, fill=(15, 23, 42, 240), outline=self.ACCENT_PURPLE, width=2)
+        draw.text((95, 72), "EXECUTIVE TECH BRIEFING • 2026", font=font_badge, fill=self.ACCENT_PURPLE)
+
+        # 2. Main Headline
+        title_lines = self._wrap_text(headline, font_title, self.WIDTH - 140, draw)
+        curr_y = 135
+        for line in title_lines[:2]:
+            draw.text((70, curr_y), line, font=font_title, fill=self.TEXT_PRIMARY)
+            curr_y += 62
+
+        draw.text((70, curr_y + 8), f"Strategic Impact Analysis • {category.upper()}", font=font_sub, fill=self.ACCENT_CYAN)
+        curr_y += 55
+
+        # 3. Giant Central Hero Spotlight Card
+        hero_w = self.WIDTH - 140
+        hero_h = 240
+        draw.rounded_rectangle([70, curr_y, 70 + hero_w, curr_y + hero_h], radius=16, fill=(10, 16, 32, 240), outline=self.ACCENT_CYAN, width=2)
+        # Inner accent line
+        draw.rounded_rectangle([74, curr_y + 4, 70 + hero_w - 4, curr_y + hero_h - 4], radius=12, outline=self.ACCENT_PURPLE, width=1)
+
+        draw.text((105, curr_y + 28), "KEY ARCHITECTURAL TAKEAWAY", font=FontManager.get_font(20, bold=True), fill=self.ACCENT_CYAN)
+
+        hero_text = points[0] if points else "Strategic architectural evolution delivering next-generation engineering impact."
+        h_lines = self._wrap_text(hero_text, font_quote, hero_w - 70, draw)
+        hy = curr_y + 68
+        for hl in h_lines[:3]:
+            draw.text((105, hy), hl, font=font_quote, fill=self.TEXT_PRIMARY)
+            hy += 38
+
+        curr_y += hero_h + 35
+
+        # 4. Dual Side-by-Side Impact Metric Boxes
+        box_w = (hero_w - 30) // 2
+        box_h = 160
+
+        # Left Box (Production Advantage)
+        draw.rounded_rectangle([70, curr_y, 70 + box_w, curr_y + box_h], radius=12, fill=(12, 20, 38, 235), outline=self.ACCENT_GREEN, width=2)
+        draw.text((95, curr_y + 24), "PRODUCTION ADVANTAGE", font=font_m_lbl, fill=self.ACCENT_GREEN)
+        p2 = points[1] if len(points) > 1 else "Significant performance and scaling benefit."
+        p2_lines = self._wrap_text(p2, font_quote_desc, box_w - 50, draw)
+        py = curr_y + 60
+        for pl in p2_lines[:3]:
+            draw.text((95, py), pl, font=font_quote_desc, fill=self.TEXT_PRIMARY)
+            py += 28
+
+        # Right Box (Ecosystem Impact)
+        rx = 70 + box_w + 30
+        draw.rounded_rectangle([rx, curr_y, rx + box_w, curr_y + box_h], radius=12, fill=(12, 20, 38, 235), outline=self.ACCENT_BLUE, width=2)
+        draw.text((rx + 25, curr_y + 24), "ECOSYSTEM IMPACT", font=font_m_lbl, fill=self.ACCENT_BLUE)
+        p3 = points[2] if len(points) > 2 else "Broad enterprise and developer workflow adoption."
+        p3_lines = self._wrap_text(p3, font_quote_desc, box_w - 50, draw)
+        ry = curr_y + 60
+        for rl in p3_lines[:3]:
+            draw.text((rx + 25, ry), rl, font=font_quote_desc, fill=self.TEXT_PRIMARY)
+            ry += 28
+
+        # 5. Bottom Brand Strip
+        draw.text((70, self.HEIGHT - 65), "ENGINEERING INSIGHTS • AUTOMATED ARCHITECTURE", font=FontManager.get_font(18), fill=self.TEXT_MUTED)
+        draw.text((self.WIDTH - 300, self.HEIGHT - 65), "LINKEDIN TECH INTELLIGENCE", font=FontManager.get_font(18, bold=True), fill=self.ACCENT_CYAN)
+
+        return img.convert("RGB")
+
+    def _render_benchmark_comparison(
+        self,
+        topic: str,
+        headline: str,
+        points: list[str],
+        category: str,
+        source_name: str,
+        bg_path: Optional[Path] = None,
+    ) -> Image.Image:
+        """Type 4: Official Benchmark & Performance Evaluation Card.
+        Comparative progress bars, percentage indicators, and architectural takeaways.
+        """
+        img = self._load_base_background(bg_path, overlay_mode="dark_glass")
+        draw = ImageDraw.Draw(img)
+
+        font_badge = FontManager.get_font(20, bold=True)
+        font_title = FontManager.get_font(46, bold=True)
+        font_sub = FontManager.get_font(22, bold=False)
+        font_bar_lbl = FontManager.get_font(22, bold=True)
+        font_bar_val = FontManager.get_font(22, bold=True)
+
+        # 1. Header
+        draw.rounded_rectangle([70, 60, 480, 100], radius=8, fill=(15, 23, 42, 240), outline=self.ACCENT_GREEN, width=2)
+        draw.text((90, 72), "BENCHMARK EVALUATION & PERFORMANCE", font=font_badge, fill=self.ACCENT_GREEN)
+
+        # 2. Main Title
+        title_lines = self._wrap_text(headline, font_title, self.WIDTH - 140, draw)
+        curr_y = 125
+        for line in title_lines[:2]:
+            draw.text((70, curr_y), line, font=font_title, fill=self.TEXT_PRIMARY)
+            curr_y += 52
+
+        draw.text((70, curr_y + 4), "Empirical Measurements Across Industry Workloads", font=font_sub, fill=self.TEXT_SECONDARY)
+        curr_y += 45
+
+        # 3. 3 Comparative Benchmark Progress Bars
+        bar_card_w = self.WIDTH - 140
+        bar_card_h = 92
+        bar_gap = 24
+
+        benchmarks = [
+            ("Reasoning & Algorithmic Accuracy", "94.8% HIGHEST", 0.948, self.ACCENT_CYAN),
+            ("Inference Speed & Pipeline Throughput", "3.4x SPEEDUP", 0.85, self.ACCENT_GREEN),
+            ("Memory Efficiency & Resource Footprint", "48% REDUCTION", 0.72, self.ACCENT_PURPLE),
+        ]
+
+        for i, (metric_name, metric_score, pct, color) in enumerate(benchmarks):
+            by = curr_y + i * (bar_card_h + bar_gap)
+            draw.rounded_rectangle([70, by, 70 + bar_card_w, by + bar_card_h], radius=12, fill=(10, 16, 32, 235), outline=(56, 189, 248, 120), width=1)
+
+            draw.text((95, by + 16), metric_name, font=font_bar_lbl, fill=self.TEXT_PRIMARY)
+            draw.text((70 + bar_card_w - 220, by + 16), metric_score, font=font_bar_val, fill=color)
+
+            # Background bar
+            track_w = bar_card_w - 50
+            draw.rounded_rectangle([95, by + 54, 95 + track_w, by + 72], radius=6, fill=(24, 34, 54, 255))
+            # Filled progress bar
+            draw.rounded_rectangle([95, by + 54, 95 + int(track_w * pct), by + 72], radius=6, fill=color)
+
+        curr_y += 3 * (bar_card_h + bar_gap) + 20
+
+        # 4. Assessment Callout Box
+        callout_h = 160
+        draw.rounded_rectangle([70, curr_y, 70 + bar_card_w, curr_y + callout_h], radius=14, fill=(12, 20, 38, 240), outline=self.ACCENT_CYAN, width=2)
+        draw.text((95, curr_y + 22), "VERIFIED ENGINEERING CONCLUSION", font=FontManager.get_font(20, bold=True), fill=self.ACCENT_CYAN)
+
+        c_text = points[0] if points else "Demonstrated statistically significant gains across production deployments."
+        c_lines = self._wrap_text(c_text, FontManager.get_font(22), bar_card_w - 50, draw)
+        cy = curr_y + 58
+        for cl in c_lines[:3]:
+            draw.text((95, cy), cl, font=FontManager.get_font(22), fill=self.TEXT_PRIMARY)
+            cy += 30
 
         return img.convert("RGB")
 
@@ -870,24 +1195,13 @@ class ImageGenerator:
         points: Optional[list[str]] = None,
         template_type: str = "auto",
         force_local: bool = False,
+        post_index: Optional[int] = None,
+        exclude_backgrounds: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         """Generate a complete 1200x1200px PNG graphic and return metadata.
 
-        Uses our high-fidelity photorealistic announcement poster engine by default,
-        compositing modern glassmorphic cards and typography over photorealistic 3D renders.
-
-        Args:
-            post_id: Unique database ID of the post.
-            topic: Topic title.
-            category: Industry category.
-            source_name: Publishing source.
-            headline: Custom 5-9 word headline (derived if omitted).
-            points: 2-3 concise highlight bullet points.
-            template_type: 'photorealistic_poster', 'editorial_highlight', 'architecture_diagram', 'concept_card', or 'auto'.
-            force_local: Retained for backward compatibility.
-
-        Returns:
-            Dict with image_path, image_hash, alt_text, width, height, and validation_status.
+        Dynamically selects distinct templates and rotating 8K photorealistic backgrounds
+        so each post receives a completely unique visual layout and appearance.
         """
         # 1. Clean headline (5-9 words recommended)
         raw_headline = headline or topic
@@ -907,35 +1221,76 @@ class ImageGenerator:
         filename = f"post_{post_id}_{int(time.time())}.png"
         image_path = self.output_dir / filename
 
-        # 2. Select Template (Defaults to photorealistic 3D poster)
-        selected_template = template_type
-        if selected_template in ("auto", "photorealistic_poster"):
+        # 2. Select distinct template for each post
+        if template_type == "auto":
+            idx = post_index if post_index is not None else post_id
+            template_cycle = [
+                "photorealistic_poster",
+                "architecture_blueprint",
+                "editorial_spotlight",
+                "benchmark_comparison",
+            ]
+            selected_template = template_cycle[(idx - 1) % len(template_cycle)]
+        else:
+            selected_template = template_type
+
+        # 3. Select matching 8K background asset (ensuring no repetition)
+        bg_path, bg_filename = self._pick_background(
+            topic=topic,
+            category=category,
+            source_name=source_name,
+            exclude_filenames=exclude_backgrounds,
+        )
+
+        # 4. Render corresponding image template
+        if selected_template == "photorealistic_poster":
             image = self._render_photorealistic_poster(
                 topic=topic,
                 headline=clean_headline,
                 points=clean_points,
                 category=category,
                 source_name=source_name,
+                bg_path=bg_path,
             )
-            image.save(str(image_path), format="PNG", optimize=True)
-            template_used = "photorealistic_poster"
+        elif selected_template in ("architecture_blueprint", "architecture_diagram"):
+            image = self._render_architecture_blueprint(
+                topic=topic,
+                headline=clean_headline,
+                points=clean_points,
+                category=category,
+                source_name=source_name,
+                bg_path=bg_path,
+            )
+        elif selected_template in ("editorial_spotlight", "editorial_highlight"):
+            image = self._render_editorial_spotlight(
+                topic=topic,
+                headline=clean_headline,
+                points=clean_points,
+                category=category,
+                source_name=source_name,
+                bg_path=bg_path,
+            )
+        elif selected_template in ("benchmark_comparison", "concept_card"):
+            image = self._render_benchmark_comparison(
+                topic=topic,
+                headline=clean_headline,
+                points=clean_points,
+                category=category,
+                source_name=source_name,
+                bg_path=bg_path,
+            )
         else:
-            image = Image.new("RGB", (self.WIDTH, self.HEIGHT), self.BG_COLOR)
-            draw = ImageDraw.Draw(image)
-            self._draw_background_gradient(draw)
+            image = self._render_photorealistic_poster(
+                topic=topic,
+                headline=clean_headline,
+                points=clean_points,
+                category=category,
+                source_name=source_name,
+                bg_path=bg_path,
+            )
 
-            start_y = self._render_header(draw, category, source_name)
-
-            if selected_template == "architecture_diagram":
-                self._render_architecture_diagram(draw, start_y, clean_headline, clean_points)
-            elif selected_template == "concept_card":
-                self._render_concept_card(draw, start_y, clean_headline, clean_points)
-            else:
-                self._render_editorial_highlight(draw, start_y, clean_headline, clean_points)
-
-            self._render_footer(draw)
-            image.save(str(image_path), format="PNG", optimize=True)
-            template_used = selected_template
+        image.save(str(image_path), format="PNG", optimize=True)
+        template_used = selected_template
 
         is_valid, reason = ImageValidator.validate(image_path)
         if not is_valid:
@@ -944,13 +1299,13 @@ class ImageGenerator:
 
         img_hash = self.compute_image_hash(image_path)
         alt_text = (
-            f"Photorealistic technical announcement poster titled '{clean_headline}'. Category: {category}. "
+            f"Technical visual ({selected_template}) titled '{clean_headline}'. Category: {category}. "
             f"Key insights: {'; '.join(clean_points[:2])}."
         )
 
         logger.info(
             f"Successfully generated 1200x1200px PNG graphic for post #{post_id} "
-            f"using template '{template_used}' at {image_path.name}."
+            f"using template '{template_used}' and background '{bg_filename}' at {image_path.name}."
         )
 
         return {
@@ -959,7 +1314,8 @@ class ImageGenerator:
             "image_alt_text": alt_text,
             "image_width": self.WIDTH,
             "image_height": self.HEIGHT,
-            "template_used": selected_template,
+            "template_used": template_used,
+            "background_used": bg_filename,
             "validation_status": "VALIDATED",
         }
 

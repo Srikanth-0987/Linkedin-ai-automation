@@ -198,6 +198,9 @@ class ContentGenerator:
         provider: Optional[str] = None,
         topic_id: Optional[int] = None,
         generate_image: bool = True,
+        image_template: str = "auto",
+        post_index: Optional[int] = None,
+        exclude_backgrounds: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         """Generate a new LinkedIn post draft with automatic failover to Ollama.
         
@@ -303,6 +306,9 @@ class ContentGenerator:
                     source_name=source_name,
                     headline=headline,
                     points=points,
+                    template_type=image_template or "auto",
+                    post_index=post_index,
+                    exclude_backgrounds=exclude_backgrounds,
                 )
                 # Attach image metadata to SQLite database
                 self.db.attach_image_to_post(

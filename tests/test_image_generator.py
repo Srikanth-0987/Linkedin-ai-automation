@@ -354,3 +354,49 @@ def test_photorealistic_poster_rendering(image_gen):
     assert is_valid is True
 
 
+def test_distinct_image_types_and_backgrounds_per_post(image_gen):
+    """Verify each post receives a distinct template type and background is rotated."""
+    used_bgs = []
+
+    # Post 1 (AI News)
+    meta1 = image_gen.generate_image_for_post(
+        post_id=901,
+        topic="OpenAI Introduces New Multimodal Agent Framework",
+        category="Frontier AI",
+        source_name="OpenAI Lab",
+        post_index=1,
+        exclude_backgrounds=used_bgs,
+    )
+    assert meta1["template_used"] == "photorealistic_poster"
+    assert meta1["validation_status"] == "VALIDATED"
+    used_bgs.append(meta1["background_used"])
+
+    # Post 2 (Tech News)
+    meta2 = image_gen.generate_image_for_post(
+        post_id=902,
+        topic="Distributed Consensus and Fast Storage in Cloud Datacenters",
+        category="Infrastructure",
+        source_name="Engineering Blog",
+        post_index=2,
+        exclude_backgrounds=used_bgs,
+    )
+    assert meta2["template_used"] == "architecture_blueprint"
+    assert meta2["validation_status"] == "VALIDATED"
+    assert meta2["background_used"] != meta1["background_used"]  # Guaranteed distinct!
+    used_bgs.append(meta2["background_used"])
+
+    # Post 3 (Industry Trends / Spotlight)
+    meta3 = image_gen.generate_image_for_post(
+        post_id=903,
+        topic="Global Tech Regulations and AI Safety Accords",
+        category="Policy & Standards",
+        source_name="Tech Policy Review",
+        post_index=3,
+        exclude_backgrounds=used_bgs,
+    )
+    assert meta3["template_used"] == "editorial_spotlight"
+    assert meta3["validation_status"] == "VALIDATED"
+    assert meta3["background_used"] not in [meta1["background_used"], meta2["background_used"]]
+
+
+

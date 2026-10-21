@@ -578,6 +578,14 @@ def cmd_daily_run(args: argparse.Namespace) -> None:
 
     results_summary = []
 
+    used_backgrounds: list[str] = []
+    template_sequence = [
+        "photorealistic_poster",
+        "architecture_blueprint",
+        "editorial_spotlight",
+        "benchmark_comparison",
+    ]
+
     for idx, topic_info in enumerate(selected_topics, 1):
         field_label = topic_info.get("target_field") or f"Field #{idx}"
         print("\n" + "-" * 70)
@@ -589,11 +597,13 @@ def cmd_daily_run(args: argparse.Namespace) -> None:
             print(f"Score:    {topic_info['score']} pts")
 
         # Step 2: Generate Post Draft
-        # Strategy: Posts 1 & 2 generate photorealistic 3D announcement visuals; Post 3 is a scripted text-only news story
+        # Distinct visual types for each post: Post 1 -> 3D Announcement Poster, Post 2 -> Architecture & Pipeline Blueprint, Post 3 -> Scripted Text News (or Editorial Spotlight)
         should_generate_image = (idx <= 2)
+        assigned_template = template_sequence[(idx - 1) % len(template_sequence)]
+
         print(f"\n-> Generating 80-150 word post draft via AI ({args.provider or config.ai_provider})...")
         if should_generate_image:
-            print(f"-> Generating matching photorealistic 3D announcement visual for Post #{idx}...")
+            print(f"-> Generating distinct visual type #{idx}: {assigned_template.replace('_', ' ').upper()}...")
         else:
             print(f"-> Formatting Post #{idx} as a dedicated scripted text-only news story (no image)...")
 
@@ -607,6 +617,9 @@ def cmd_daily_run(args: argparse.Namespace) -> None:
                 provider=args.provider or config.ai_provider,
                 topic_id=topic_info.get("id"),
                 generate_image=should_generate_image,
+                image_template=assigned_template,
+                post_index=idx,
+                exclude_backgrounds=used_backgrounds,
             )
         except Exception as e:
             logger.error(f"Post generation failed for '{topic_info['title']}': {e}")
@@ -615,6 +628,13 @@ def cmd_daily_run(args: argparse.Namespace) -> None:
 
         post_id = draft["post_id"]
         print(f"Draft #{post_id} created ({draft['ai_provider']} / {draft['ai_model']})")
+
+        # Track background used so subsequent posts pick a different background
+        bg_used = draft.get("image", {}).get("background_used")
+        tmpl_used = draft.get("image", {}).get("template_used")
+        if bg_used:
+            used_backgrounds.append(bg_used)
+            print(f"Visual Template: {tmpl_used} | Background: {bg_used}")
 
         # Step 3: Verify realistic image (if generated)
         post = db.get_post(post_id)
