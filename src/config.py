@@ -54,8 +54,9 @@ class Config:
         self.groq_api_key: str = os.getenv("GROQ_API_KEY", "").strip()
         self.groq_model: str = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b").strip()
 
-        # Google Gemini & Other AI
-        self.gemini_api_key: str = os.getenv("GEMINI_API_KEY", "").strip()
+        # Google Gemini & Google Cloud API Key
+        self.gemini_api_key: str = (os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")).strip()
+        self.google_api_key: str = (os.getenv("GOOGLE_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")).strip()
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "").strip()
 
         # Mandatory Safety Defaults

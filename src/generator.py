@@ -309,6 +309,8 @@ class ContentGenerator:
                     template_type=image_template or "auto",
                     post_index=post_index,
                     exclude_backgrounds=exclude_backgrounds,
+                    commentary=commentary,
+                    context=context,
                 )
                 # Attach image metadata to SQLite database
                 self.db.attach_image_to_post(

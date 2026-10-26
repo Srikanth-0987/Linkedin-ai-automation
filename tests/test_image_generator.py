@@ -17,6 +17,7 @@ from src.image_generator import (
     fetch_ai_realistic_image,
     process_and_save_custom_image,
     synthesize_realistic_poster_prompt,
+    synthesize_ai_content_image_prompt,
 )
 
 
@@ -397,6 +398,27 @@ def test_distinct_image_types_and_backgrounds_per_post(image_gen):
     assert meta3["template_used"] == "editorial_spotlight"
     assert meta3["validation_status"] == "VALIDATED"
     assert meta3["background_used"] not in [meta1["background_used"], meta2["background_used"]]
+
+
+def test_synthesize_ai_content_image_prompt_formats():
+    """Verify different post indices produce distinct visual formats."""
+    prompt1, fmt1 = synthesize_ai_content_image_prompt(
+        topic="Claude 3.7 Sonnet Reasoning Architecture",
+        category="Artificial Intelligence",
+        commentary="Hybrid reasoning with chain-of-thought tokens.",
+        post_index=1,
+    )
+    prompt2, fmt2 = synthesize_ai_content_image_prompt(
+        topic="Linux Kernel eBPF Packet Processing",
+        category="Systems",
+        commentary="Zero-copy memory buffers and packet filters.",
+        post_index=2,
+    )
+    assert fmt1 != fmt2
+    assert "no text" in prompt1.lower()
+    assert "no text" in prompt2.lower()
+    assert len(prompt1.split()) >= 8
+    assert len(prompt2.split()) >= 8
 
 
 

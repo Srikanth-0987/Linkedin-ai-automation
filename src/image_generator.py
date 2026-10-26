@@ -13,6 +13,7 @@ Features:
 - Image quality validation and accessible alt text generation
 """
 
+import datetime
 import hashlib
 from io import BytesIO
 import os
@@ -84,6 +85,146 @@ def extract_image_elements(topic: str, context: str = "", commentary: str = "") 
         points.append("Practical production impact for engineering teams.")
 
     return headline, points[:3]
+
+
+def synthesize_ai_content_image_prompt(
+    topic: str,
+    category: str = "Technology",
+    commentary: str = "",
+    context: str = "",
+    headline: Optional[str] = None,
+    points: Optional[list[str]] = None,
+    post_index: Optional[int] = None,
+    gemini_api_key: str = "",
+    groq_api_key: str = "",
+    groq_model: str = "openai/gpt-oss-120b",
+) -> tuple[str, str]:
+    """Synthesize a hyper-specific, content-related text-to-image prompt using Google Gemini AI or Groq.
+
+    Dynamically selects from a rotating catalog of visual formats (3D Cinematic Render, Isometric Technical Blueprint,
+    Macro Semiconductor, Minimalist Dark Glassmorphic, Holographic Command Grid) so that:
+    1. Every individual post in a day receives a completely different visual format.
+    2. Everyday of the week rotates so the formats and styles differ day-over-day.
+    3. The prompt explicitly details the topic's actual physical hardware, system architecture, or concepts,
+       guaranteeing content-related visuals instead of generic placeholder graphics.
+
+    Returns:
+        tuple[prompt: str, format_title: str]
+    """
+    now = datetime.datetime.now()
+    day_of_year = now.timetuple().tm_yday
+    idx = post_index if post_index is not None else 1
+
+    format_catalog = [
+        (
+            "3D Photorealistic Studio Cinematic Render",
+            "hyper-realistic 3D studio render, tangible physical engineering materials, dramatic high-contrast studio rim lighting, volumetric glow, shallow depth of field, 8k octane render, cinematic angle",
+        ),
+        (
+            "Isometric Technical Architecture Blueprint",
+            "detailed 3D isometric cutaway schematic diagram, glowing neon-cyan trace pipelines, modular system routing, dark matte slate carbon background, precise technical blueprint aesthetic, 8k render",
+        ),
+        (
+            "Macro Hardware Engineering & Microscopic Silicon",
+            "extreme macro photography of illuminated silicon wafer architectures, intricate laser etched gold and cyan circuit traces, carbon motherboard substrate, dramatic atmospheric volumetric lighting, 8k",
+        ),
+        (
+            "Minimalist Dark Glassmorphic Editorial Concept",
+            "translucent frosted glass UI panels, glowing laser vectors, ambient twilight reflections, executive modern aesthetic, sleek depth of field, award-winning technology design",
+        ),
+        (
+            "Futuristic Holographic Command & Network Telemetry",
+            "3D digital wireframe holographic interface, glowing data nodes and cyber network streams, dark futuristic command room, volumetric lighting rays, 8k render",
+        ),
+    ]
+
+    # Calculate format index: day_of_year ensures everyday shifts, idx ensures post 1 and post 2 are different
+    format_idx = ((day_of_year * 2) + (idx - 1)) % len(format_catalog)
+    fmt_title, fmt_style = format_catalog[format_idx]
+
+    context_snippet = (commentary or context or "").strip()
+    if len(context_snippet) > 400:
+        context_snippet = context_snippet[:400]
+
+    system_instruction = (
+        "You are an expert AI Art Director for high-end technology publications.\n"
+        f"Generate a 35-40 word text-to-image prompt to visually represent this specific news topic:\n"
+        f"Topic: {topic}\n"
+        f"Context/Key Details: {context_snippet}\n"
+        f"Category: {category}\n"
+        f"Assigned Visual Format: {fmt_title} ({fmt_style})\n\n"
+        "STRICT RULES:\n"
+        "1. The visual MUST directly depict the specific physical technology, architecture, components, or concrete system mentioned in the topic (e.g. quantum processors, liquid cooling copper tubes, eBPF packet pipelines, DNA double helix, transformer attention lattice). Do NOT generate a generic placeholder robot unless humanoid robotics is the specific topic.\n"
+        f"2. Incorporate the lighting, materials, and composition of {fmt_title}.\n"
+        "3. Strictly NO text, NO labels, NO typography, NO letters, NO numbers inside the image.\n"
+        "4. Output ONLY the 35-40 word image prompt text, with no introductory text or markdown tags."
+    )
+
+    key = (gemini_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    generated_prompt = ""
+
+    # Primary: Google Gemini with Google API Key
+    if key:
+        gemini_models = ["gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-3.5-flash"]
+        for g_model in gemini_models:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={key}"
+                resp = requests.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json={"contents": [{"parts": [{"text": system_instruction}]}]},
+                    timeout=12,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            text = parts[0]["text"].strip()
+                            text = re.sub(r"^(Prompt:|\"|')\s*", "", text, flags=re.IGNORECASE)
+                            text = re.sub(r"(\"|')$", "", text).strip()
+                            if len(text.split()) >= 8:
+                                generated_prompt = text
+                                logger.info(f"Google Gemini ({g_model}) synthesized content-related prompt: {generated_prompt[:80]}...")
+                                break
+            except Exception as e:
+                logger.warning(f"Google Gemini prompt generation with {g_model} failed: {e}")
+
+    # Secondary Fallback: Groq Cloud
+    if not generated_prompt:
+        groq_k = (groq_api_key or os.getenv("GROQ_API_KEY") or "").strip()
+        if groq_k:
+            try:
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {groq_k}", "Content-Type": "application/json"}
+                payload = {
+                    "model": groq_model or "openai/gpt-oss-120b",
+                    "messages": [{"role": "user", "content": system_instruction}],
+                    "temperature": 0.5,
+                    "max_tokens": 120,
+                }
+                resp = requests.post(url, headers=headers, json=payload, timeout=12)
+                if resp.status_code == 200:
+                    content = resp.json()["choices"][0]["message"]["content"].strip()
+                    content = re.sub(r"^(Prompt:|\"|')\s*", "", content, flags=re.IGNORECASE)
+                    content = re.sub(r"(\"|')$", "", content).strip()
+                    if len(content.split()) >= 8:
+                        generated_prompt = content
+                        logger.info(f"Groq Cloud synthesized content-related prompt: {generated_prompt[:80]}...")
+            except Exception as e:
+                logger.warning(f"Groq Cloud prompt synthesis failed: {e}")
+
+    # Tertiary Fallback: Heuristic Prompt Synthesis
+    if not generated_prompt:
+        clean_hl = headline or topic
+        clean_hl = re.sub(r"https?://\S+", "", clean_hl).strip()
+        generated_prompt = f"Official technology visual for {clean_hl}. {fmt_style}, dramatic studio lighting, 8k render, no text"
+
+    if "no text" not in generated_prompt.lower():
+        generated_prompt = f"{generated_prompt.rstrip('.')}, no text"
+
+    return generated_prompt, fmt_title
 
 
 def synthesize_realistic_poster_prompt(
@@ -216,10 +357,13 @@ def fetch_ai_realistic_image(
         use_seed = seed if seed is not None else int(time.time() * 1000) % 1000000
         clean_prompt = prompt.strip()[:240]
         encoded_prompt = quote(clean_prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=1&seed={use_seed}"
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=1&seed={use_seed}&model=flux"
 
         logger.info(f"Attempting free realistic AI image generation with seed {use_seed} (timeout: {timeout}s)...")
         response = requests.get(url, timeout=timeout)
+        if response.status_code != 200:
+            fallback_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=1&seed={use_seed}"
+            response = requests.get(fallback_url, timeout=timeout)
 
         # Handle rate-limit cooldown automatically
         if response.status_code == 402 and max_retries > 0:
@@ -1215,11 +1359,14 @@ class ImageGenerator:
         force_local: bool = False,
         post_index: Optional[int] = None,
         exclude_backgrounds: Optional[list[str]] = None,
+        commentary: str = "",
+        context: str = "",
     ) -> dict[str, Any]:
         """Generate a complete 1200x1200px PNG graphic and return metadata.
 
-        Dynamically selects distinct templates and rotating 8K photorealistic backgrounds
-        so each post receives a completely unique visual layout and appearance.
+        Dynamically synthesizes a content-related AI image prompt using the Google Gemini / Groq API key,
+        rotating through distinct high-end visual formats (3D Cinematic, Isometric Blueprint, Macro Silicon, etc.)
+        with unique daily seeds so every image has a different style and format.
         """
         # 1. Clean headline (5-9 words recommended)
         raw_headline = headline or topic
@@ -1239,7 +1386,7 @@ class ImageGenerator:
         filename = f"post_{post_id}_{int(time.time())}.png"
         image_path = self.output_dir / filename
 
-        # 2. Dynamic Free AI Image Generation (Diverse styles, 100% unique seed per post)
+        # 2. Dynamic Free AI Image Generation (Google Gemini / Groq Art Direction + Rotating Formats)
         use_ai_generation = (
             getattr(self.config, "ai_image_generation", True)
             and not force_local
@@ -1247,29 +1394,34 @@ class ImageGenerator:
         )
         if use_ai_generation:
             idx = post_index if post_index is not None else post_id
-            format_styles = [
-                # Style 0: 3D Cinematic Cybernetic / AI Researcher
-                "Photorealistic 3D cinematic concept art of a futuristic cybernetic android engineer and glowing neural network interface in a dark glass laboratory with twilight city reflections, 8k octane render, dramatic studio rim lighting, volumetric glow",
-                # Style 1: Isometric High-Tech Architecture / Datacenter Blueprint
-                "Futuristic isometric 3D architectural blueprint of a modular quantum computing datacenter, intricate glowing cyan and purple fiber-optic pipelines, floating holographic glass server racks, dark high-tech studio aesthetic, 8k render",
-                # Style 2: Next-Gen Quantum Microchip / Semiconductor Wafer
-                "Cinematic macro photography of a glowing next-generation quantum microchip processor on dark matte carbon motherboard, laser etched gold and cyan circuit traces, dramatic atmospheric volumetric lighting, 8k",
-                # Style 3: Modern Developer Station & 3D Companion Robot
-                "Modern executive developer workstation at dusk, ultra-thin laptop running futuristic IDE code, cute 3D companion robot on desk, floating luminous ribbon icon, ambient studio lighting, 8k",
-                # Style 4: Minimalist Modern Editorial / Glassmorphic Tech
-                "Minimalist modern 3D executive tech concept art, glowing translucent glass geometric structures, floating holographic data sphere, ambient twilight lighting, clean corporate dark-mode aesthetic, 8k octane render",
-                # Style 5: Cyber Security / Global AI Connectivity
-                "3D digital wireframe holographic globe surrounded by glowing satellite orbital data streams and cyber defense shields, dark futuristic command room, 8k render",
-            ]
-            chosen_style = format_styles[(idx - 1) % len(format_styles)]
-            ai_seed = int(time.time() * 1000) % 999999 + (idx * 73)
-            ai_prompt = f"Official tech visual for {clean_headline}. {chosen_style}, photorealistic 8k render, no text"
+            now = datetime.datetime.now()
+            day_of_year = now.timetuple().tm_yday
 
-            logger.info(f"Generating dynamic AI image for post #{post_id} with seed {ai_seed} (style #{idx % len(format_styles)})...")
+            # 1. Synthesize content-related prompt using Google API key (or Groq fallback)
+            ai_prompt, format_name = synthesize_ai_content_image_prompt(
+                topic=topic,
+                category=category,
+                commentary=commentary,
+                context=context,
+                headline=clean_headline,
+                points=clean_points,
+                post_index=idx,
+                gemini_api_key=getattr(self.config, "gemini_api_key", ""),
+                groq_api_key=getattr(self.config, "groq_api_key", ""),
+                groq_model=getattr(self.config, "groq_model", "openai/gpt-oss-120b"),
+            )
+
+            # 2. Compute dynamic unique seed ensuring every image everyday is different
+            ai_seed = (int(time.time() * 1000) % 900000) + (idx * 1337) + (day_of_year * 41)
+
+            logger.info(
+                f"Generating dynamic AI image for post #{post_id} with seed {ai_seed} "
+                f"using format '{format_name}' and Google AI Art Director prompt..."
+            )
             ai_success = fetch_ai_realistic_image(
                 prompt=ai_prompt,
                 output_path=image_path,
-                timeout=30,
+                timeout=35,
                 overlay_footer=True,
                 seed=ai_seed,
             )
@@ -1279,17 +1431,17 @@ class ImageGenerator:
                 if is_valid:
                     img_hash = self.compute_image_hash(image_path)
                     alt_text = (
-                        f"AI generated visual ({chosen_style[:50]}...) for '{clean_headline}'. Category: {category}. "
-                        f"Key insights: {'; '.join(clean_points[:2])}."
+                        f"AI generated {format_name} for '{clean_headline}'. Category: {category}. "
+                        f"Visual: {ai_prompt[:90]}... Key insights: {'; '.join(clean_points[:2])}."
                     )
-                    logger.info(f"Successfully generated dynamic AI image for post #{post_id} at {image_path.name}")
+                    logger.info(f"Successfully generated dynamic content-related AI image for post #{post_id} at {image_path.name}")
                     return {
                         "image_path": str(image_path),
                         "image_hash": img_hash,
                         "image_alt_text": alt_text,
                         "image_width": self.WIDTH,
                         "image_height": self.HEIGHT,
-                        "template_used": f"dynamic_ai_style_{(idx - 1) % len(format_styles)}",
+                        "template_used": f"ai_content_{format_name.lower().replace(' ', '_').replace('&', 'and')}",
                         "background_used": f"ai_seed_{ai_seed}",
                         "validation_status": "VALIDATED",
                     }
