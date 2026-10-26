@@ -196,9 +196,10 @@ def synthesize_realistic_poster_prompt(
 def fetch_ai_realistic_image(
     prompt: str,
     output_path: Path | str,
-    timeout: int = 25,
+    timeout: int = 30,
     overlay_footer: bool = True,
     seed: Optional[int] = None,
+    max_retries: int = 1,
 ) -> bool:
     """Fetch an AI-generated realistic announcement graphic from zero-cost text-to-image API.
 
@@ -212,13 +213,30 @@ def fetch_ai_realistic_image(
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        use_seed = seed if seed is not None else int(time.time()) % 100000
+        use_seed = seed if seed is not None else int(time.time() * 1000) % 1000000
         clean_prompt = prompt.strip()[:240]
         encoded_prompt = quote(clean_prompt)
         url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=1&seed={use_seed}"
 
-        logger.info(f"Attempting free realistic AI image generation (timeout: {timeout}s)...")
+        logger.info(f"Attempting free realistic AI image generation with seed {use_seed} (timeout: {timeout}s)...")
         response = requests.get(url, timeout=timeout)
+
+        # Handle rate-limit cooldown automatically
+        if response.status_code == 402 and max_retries > 0:
+            retry_match = re.search(r"Retry after (\d+)s", response.text)
+            wait_s = int(retry_match.group(1)) + 2 if retry_match else 25
+            if wait_s <= 35:
+                logger.info(f"Pollinations rate-limit cooldown: waiting {wait_s}s before retry...")
+                time.sleep(wait_s)
+                return fetch_ai_realistic_image(
+                    prompt=prompt,
+                    output_path=output_path,
+                    timeout=timeout,
+                    overlay_footer=overlay_footer,
+                    seed=seed,
+                    max_retries=max_retries - 1,
+                )
+
         if response.status_code != 200 or len(response.content) < 1500:
             logger.warning(
                 f"AI image API returned status {response.status_code} "
@@ -1221,7 +1239,64 @@ class ImageGenerator:
         filename = f"post_{post_id}_{int(time.time())}.png"
         image_path = self.output_dir / filename
 
-        # 2. Select distinct template for each post
+        # 2. Dynamic Free AI Image Generation (Diverse styles, 100% unique seed per post)
+        use_ai_generation = (
+            getattr(self.config, "ai_image_generation", True)
+            and not force_local
+            and template_type in ("auto", "photorealistic_poster", "architecture_blueprint", "editorial_spotlight", "benchmark_comparison", "ai_realistic")
+        )
+        if use_ai_generation:
+            idx = post_index if post_index is not None else post_id
+            format_styles = [
+                # Style 0: 3D Cinematic Cybernetic / AI Researcher
+                "Photorealistic 3D cinematic concept art of a futuristic cybernetic android engineer and glowing neural network interface in a dark glass laboratory with twilight city reflections, 8k octane render, dramatic studio rim lighting, volumetric glow",
+                # Style 1: Isometric High-Tech Architecture / Datacenter Blueprint
+                "Futuristic isometric 3D architectural blueprint of a modular quantum computing datacenter, intricate glowing cyan and purple fiber-optic pipelines, floating holographic glass server racks, dark high-tech studio aesthetic, 8k render",
+                # Style 2: Next-Gen Quantum Microchip / Semiconductor Wafer
+                "Cinematic macro photography of a glowing next-generation quantum microchip processor on dark matte carbon motherboard, laser etched gold and cyan circuit traces, dramatic atmospheric volumetric lighting, 8k",
+                # Style 3: Modern Developer Station & 3D Companion Robot
+                "Modern executive developer workstation at dusk, ultra-thin laptop running futuristic IDE code, cute 3D companion robot on desk, floating luminous ribbon icon, ambient studio lighting, 8k",
+                # Style 4: Minimalist Modern Editorial / Glassmorphic Tech
+                "Minimalist modern 3D executive tech concept art, glowing translucent glass geometric structures, floating holographic data sphere, ambient twilight lighting, clean corporate dark-mode aesthetic, 8k octane render",
+                # Style 5: Cyber Security / Global AI Connectivity
+                "3D digital wireframe holographic globe surrounded by glowing satellite orbital data streams and cyber defense shields, dark futuristic command room, 8k render",
+            ]
+            chosen_style = format_styles[(idx - 1) % len(format_styles)]
+            ai_seed = int(time.time() * 1000) % 999999 + (idx * 73)
+            ai_prompt = f"Official tech visual for {clean_headline}. {chosen_style}, photorealistic 8k render, no text"
+
+            logger.info(f"Generating dynamic AI image for post #{post_id} with seed {ai_seed} (style #{idx % len(format_styles)})...")
+            ai_success = fetch_ai_realistic_image(
+                prompt=ai_prompt,
+                output_path=image_path,
+                timeout=30,
+                overlay_footer=True,
+                seed=ai_seed,
+            )
+
+            if ai_success:
+                is_valid, reason = ImageValidator.validate(image_path)
+                if is_valid:
+                    img_hash = self.compute_image_hash(image_path)
+                    alt_text = (
+                        f"AI generated visual ({chosen_style[:50]}...) for '{clean_headline}'. Category: {category}. "
+                        f"Key insights: {'; '.join(clean_points[:2])}."
+                    )
+                    logger.info(f"Successfully generated dynamic AI image for post #{post_id} at {image_path.name}")
+                    return {
+                        "image_path": str(image_path),
+                        "image_hash": img_hash,
+                        "image_alt_text": alt_text,
+                        "image_width": self.WIDTH,
+                        "image_height": self.HEIGHT,
+                        "template_used": f"dynamic_ai_style_{(idx - 1) % len(format_styles)}",
+                        "background_used": f"ai_seed_{ai_seed}",
+                        "validation_status": "VALIDATED",
+                    }
+                else:
+                    logger.warning(f"AI image generated but failed validation: {reason}. Falling back to local template.")
+
+        # 3. Select distinct template for each post (Local Fallback)
         if template_type == "auto":
             idx = post_index if post_index is not None else post_id
             template_cycle = [
@@ -1234,7 +1309,7 @@ class ImageGenerator:
         else:
             selected_template = template_type
 
-        # 3. Select matching 8K background asset (ensuring no repetition)
+        # 4. Select matching 8K background asset (ensuring no repetition)
         bg_path, bg_filename = self._pick_background(
             topic=topic,
             category=category,

@@ -8,7 +8,12 @@ from src.db import Database
 from src.researcher import TopicResearcher
 
 
-MOCK_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+import datetime
+from email.utils import format_datetime
+
+_now_rfc822 = format_datetime(datetime.datetime.now(datetime.timezone.utc))
+
+MOCK_RSS_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <title>AI Frontier News</title>
@@ -16,13 +21,13 @@ MOCK_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
       <title>Breakthrough in Multi-Agent Reasoning and Architecture</title>
       <link>https://example.com/multi-agent-reasoning</link>
       <description>&lt;p&gt;Researchers demonstrated novel agent workflows achieving 95% on benchmark.&lt;/p&gt;</description>
-      <pubDate>Sun, 19 Oct 2026 12:00:00 GMT</pubDate>
+      <pubDate>{_now_rfc822}</pubDate>
     </item>
     <item>
       <title>Discussion on X: Why open weights are winning</title>
       <link>https://example.com/x-discussion-open-weights</link>
       <description>Engineers on x.com/tech debate the future of open LLM weights.</description>
-      <pubDate>Sun, 19 Oct 2026 10:00:00 GMT</pubDate>
+      <pubDate>{_now_rfc822}</pubDate>
     </item>
   </channel>
 </rss>
@@ -210,4 +215,54 @@ def test_daily_multi_field_topics_selection(temp_db):
     assert len(fallback_topics) == 3
     fallback_titles = [t["title"] for t in fallback_topics]
     assert len(set(fallback_titles)) == 3
+
+
+def test_curate_trending_news_with_groq_mocked_success(temp_db):
+    """Verify curate_trending_news_with_groq queries Groq and enriches 3 final topics."""
+    researcher = TopicResearcher(db=temp_db)
+
+    mock_topics = [
+        {"title": "OpenAI Launches Next-Gen Reasoning Model", "category": "Frontier AI", "summary": "Breakthrough in reasoning compute.", "source_url": "https://example.com/1", "source_name": "OpenAI"},
+        {"title": "Linux Kernel 6.14 Merges Fast Socket eBPF Acceleration", "category": "Software Engineering", "summary": "Zero-copy networking for high throughput.", "source_url": "https://example.com/2", "source_name": "Linux"},
+        {"title": "Discussion on X: Why Postgres with pgvector is replacing standalone vector DBs", "category": "Twitter / X Community Trends", "summary": "Viral thread debating database consolidation.", "source_url": "https://x.com/tech_debate", "source_name": "X Tech", "is_x_discussion": True},
+    ]
+
+    mock_groq_json = """[
+        {"slot": 1, "field": "AI News", "candidate_id": 1, "rationale": "Key frontier reasoning milestone."},
+        {"slot": 2, "field": "Tech News", "candidate_id": 2, "rationale": "Critical Linux performance architecture."},
+        {"slot": 3, "field": "Twitter/X Viral Trend", "candidate_id": 3, "rationale": "High-engagement debate among software architects on X."}
+    ]"""
+
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content=mock_groq_json))]
+
+    with patch.object(researcher, "fetch_all_topics", return_value=mock_topics):
+        with patch("src.config.config.groq_api_key", "gsk_mock_test_key"):
+            with patch("groq.Groq") as mock_groq_cls:
+                mock_client = MagicMock()
+                mock_client.chat.completions.create.return_value = mock_completion
+                mock_groq_cls.return_value = mock_client
+
+                curated = researcher.curate_trending_news_with_groq(limit_per_feed=2)
+
+    assert len(curated) == 3
+    assert curated[0]["target_field"] == "AI News"
+    assert curated[0]["groq_curated"] is True
+    assert "reasoning milestone" in curated[0]["curation_rationale"]
+    assert curated[2]["target_field"] == "Twitter/X Viral Trend"
+    assert "architects on X" in curated[2]["curation_rationale"]
+
+
+def test_curate_trending_news_with_groq_fallback_on_error(temp_db):
+    """Verify graceful fallback to heuristic multi-field selection if Groq fails."""
+    researcher = TopicResearcher(db=temp_db)
+
+    with patch.object(researcher, "fetch_all_topics", side_effect=Exception("Network error")):
+        with patch.object(researcher.engine, "discover_and_rank_trends", return_value=[]):
+            fallback = researcher.curate_trending_news_with_groq()
+
+    assert len(fallback) == 3
+    fields = [t["target_field"] for t in fallback]
+    assert "AI News" in fields
+
 

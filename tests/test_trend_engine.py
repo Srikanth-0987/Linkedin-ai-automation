@@ -441,7 +441,11 @@ def test_integration_with_content_generation_workflow(temp_db):
     researcher = TopicResearcher(db=temp_db)
     generator = ContentGenerator(cfg, db=temp_db)
 
-    mock_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    from email.utils import format_datetime
+    import datetime
+    now_rfc822 = format_datetime(datetime.datetime.now(datetime.timezone.utc))
+
+    mock_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
     <rss version="2.0">
       <channel>
         <title>Anthropic Lab Announcements</title>
@@ -449,7 +453,7 @@ def test_integration_with_content_generation_workflow(temp_db):
           <title>Anthropic Launches Claude 3.7 Sonnet with Hybrid Reasoning</title>
           <link>https://anthropic.com/news/claude-3-7-sonnet</link>
           <description>Claude 3.7 introduces hybrid reasoning capabilities for complex software engineering and math benchmarks.</description>
-          <pubDate>Mon, 19 Oct 2026 12:00:00 GMT</pubDate>
+          <pubDate>{now_rfc822}</pubDate>
         </item>
       </channel>
     </rss>

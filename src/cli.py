@@ -11,6 +11,12 @@ from pathlib import Path
 import sys
 import time
 import webbrowser
+
+# Ensure clean UTF-8 encoding across Windows terminal environments
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from loguru import logger
 
 from src.callback_server import start_callback_server
@@ -569,9 +575,9 @@ def cmd_daily_run(args: argparse.Namespace) -> None:
     print("Strategy: 3 Targeted Fields -> [1] AI News  [2] Tech News  [3] Industry Trends")
     print("=" * 70)
 
-    # Step 1: Discover topics across the 3 fields
-    print("\n[STEP 1/4] Discovering fresh, unposted topics across 3 targeted fields...")
-    topics = researcher.get_daily_multi_field_topics()
+    # Step 1: Discover topics across Twitter/X and tech feeds with Groq intelligence
+    print("\n[STEP 1/4] Discovering trending discussions on Twitter/X and verified feeds, curated with Groq...")
+    topics = researcher.curate_trending_news_with_groq()
 
     target_count = getattr(args, "count", 3) or 3
     selected_topics = topics[:target_count]
@@ -593,17 +599,25 @@ def cmd_daily_run(args: argparse.Namespace) -> None:
         print("-" * 70)
         print(f"Topic:    {topic_info['title']}")
         print(f"Category: {topic_info.get('category')} | Source: {topic_info.get('source_name', 'N/A')}")
-        if topic_info.get("score"):
+        if topic_info.get("curation_rationale"):
+            clean_rationale = str(topic_info['curation_rationale']).encode("ascii", "replace").decode("ascii")
+            print(f"Curated:  {clean_rationale}")
+        elif topic_info.get("score"):
             print(f"Score:    {topic_info['score']} pts")
 
         # Step 2: Generate Post Draft
-        # Distinct visual types for each post: Post 1 -> 3D Announcement Poster, Post 2 -> Architecture & Pipeline Blueprint, Post 3 -> Scripted Text News (or Editorial Spotlight)
+        # Distinct visual types for each post: Post 1 & 2 -> Dynamic AI Generated Images with Unique Seed, Post 3 -> Dedicated Scripted News
         should_generate_image = (idx <= 2)
         assigned_template = template_sequence[(idx - 1) % len(template_sequence)]
 
+        # Pause briefly between multi-image generations to respect free AI rate limits
+        if idx > 1 and should_generate_image:
+            print("\n[Rate-Limit Cooldown] Waiting 25s for next AI image generation slot...")
+            time.sleep(25)
+
         print(f"\n-> Generating 80-150 word post draft via AI ({args.provider or config.ai_provider})...")
         if should_generate_image:
-            print(f"-> Generating distinct visual type #{idx}: {assigned_template.replace('_', ' ').upper()}...")
+            print(f"-> Generating distinct AI photorealistic visual format #{idx} (seed randomized)...")
         else:
             print(f"-> Formatting Post #{idx} as a dedicated scripted text-only news story (no image)...")
 

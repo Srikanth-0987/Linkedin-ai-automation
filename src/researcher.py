@@ -72,6 +72,27 @@ DEFAULT_RESEARCH_FEEDS = [
     },
     # 4. Tech Communities & Viral Discussions (Including X/Twitter tech debates)
     {
+        "name": "X.com Trending Tech Discussions",
+        "url": "https://hnrss.org/newest?q=x.com",
+        "source_type": "community_discussion",
+        "category": "Twitter / X Community Trends",
+        "credibility_weight": 1.25,
+    },
+    {
+        "name": "Twitter Tech Community Debates",
+        "url": "https://hnrss.org/newest?q=twitter.com",
+        "source_type": "community_discussion",
+        "category": "Twitter / X Community Trends",
+        "credibility_weight": 1.25,
+    },
+    {
+        "name": "Hacker News Frontier AI",
+        "url": "https://hnrss.org/newest?q=AI+OR+LLM+OR+DeepSeek",
+        "source_type": "community_discussion",
+        "category": "Frontier AI Research",
+        "credibility_weight": 1.2,
+    },
+    {
         "name": "Hacker News Tech Trends",
         "url": "https://hnrss.org/frontpage",
         "source_type": "community_discussion",
@@ -519,6 +540,117 @@ class TopicResearcher:
                 used_urls.append(topic["source_url"])
 
         return results
+
+    def curate_trending_news_with_groq(
+        self,
+        limit_per_feed: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Search trending news across Twitter/X, developer forums, and verified AI sources,
+        then use Groq's LPU intelligence (e.g. openai/gpt-oss-120b) to evaluate technical merit,
+        viral momentum on X, and finalize the top 3 best news stories across the core fields:
+        1. AI News (Frontier models, architectures, breakthroughs)
+        2. Tech News (Software engineering, systems, developer tools)
+        3. Twitter / X Viral Trend (Community debates, ecosystem shifts)
+        """
+        import json
+        from src.config import config as app_config
+
+        try:
+            # 1. Fetch fresh scored candidates from Twitter/X and all feeds
+            logger.info("Discovering real-time candidate stories from Twitter/X and verified tech feeds...")
+            candidates = self.fetch_all_topics(limit_per_feed=limit_per_feed)
+
+            # If Groq is not configured or no candidates, fall back to heuristic multi-field topics
+            if not app_config.groq_api_key or len(candidates) < 3:
+                logger.info("Groq API key not present or insufficient candidates; falling back to heuristic multi-field selection.")
+                return self.get_daily_multi_field_topics()
+
+            # 2. Filter candidates to unposted topics only
+            unposted_candidates = []
+            for c in candidates:
+                if not self.db or not self.db.is_topic_already_covered(c["title"], c.get("source_url", "")):
+                    unposted_candidates.append(c)
+
+            if len(unposted_candidates) < 3:
+                logger.info("Few unposted candidates in live feeds; complementing with multi-field selection.")
+                return self.get_daily_multi_field_topics()
+
+            # 3. Format compact candidate summaries for Groq
+            compact_list = []
+            for idx, item in enumerate(unposted_candidates[:25], 1):
+                is_x = " [X/Twitter Discussion]" if item.get("is_x_discussion") or "x.com" in item.get("source_url", "") or "twitter.com" in item.get("source_url", "") else ""
+                compact_list.append({
+                    "candidate_id": idx,
+                    "title": f"{item['title']}{is_x}",
+                    "category": item.get("category", "Tech"),
+                    "summary": item.get("summary", "")[:180],
+                    "source": item.get("source_name", "Web"),
+                })
+
+            curation_prompt = f"""You are a Principal Tech Analyst and AI Director reviewing trending discussions and breaking news across Twitter/X, developer forums, and frontier AI research labs.
+
+Review these real-time candidate headlines:
+{json.dumps(compact_list, indent=2)}
+
+Task:
+Analyze all candidates, eliminate promotional spam or low-substance claims, and finalize the TOP 3 best stories:
+- Slot 1: Breakthrough Frontier AI News / Model architecture / LLM release
+- Slot 2: Deep Technical Software Engineering / Systems / Developer Tool
+- Slot 3: Viral Twitter/X Discussion or Major Industry / Tech Trend (prioritize topics debated on X or with high ecosystem impact)
+
+Respond ONLY with a valid JSON array adhering strictly to this schema:
+[
+  {{"slot": 1, "field": "AI News", "candidate_id": <int>, "rationale": "<1-2 sentence reason why this is top story>"}},
+  {{"slot": 2, "field": "Tech News", "candidate_id": <int>, "rationale": "<1-2 sentence reason why this is top story>"}},
+  {{"slot": 3, "field": "Twitter/X Viral Trend", "candidate_id": <int>, "rationale": "<1-2 sentence reason why this is top story>"}}
+]
+"""
+
+            from groq import Groq
+            chosen_model = app_config.groq_model or "openai/gpt-oss-120b"
+            logger.info(f"Submitting {len(compact_list)} candidates to Groq ({chosen_model}) for Twitter/X trend curation...")
+            client = Groq(api_key=app_config.groq_api_key, timeout=30.0)
+            completion = client.chat.completions.create(
+                model=chosen_model,
+                messages=[
+                    {"role": "system", "content": "You are an expert technical curator and AI Director. Respond ONLY with a valid raw JSON array."},
+                    {"role": "user", "content": curation_prompt},
+                ],
+                temperature=0.2,
+                max_tokens=2048,
+            )
+
+            raw_resp = completion.choices[0].message.content or ""
+            # Strip markdown ```json ... ``` code blocks if returned
+            clean_resp = re.sub(r"^```(?:json)?\s*", "", raw_resp.strip(), flags=re.MULTILINE)
+            clean_resp = re.sub(r"\s*```$", "", clean_resp.strip(), flags=re.MULTILINE)
+            match = re.search(r"\[.*\]", clean_resp, re.DOTALL)
+            json_str = match.group(0) if match else clean_resp.strip()
+
+            curated_slots = json.loads(json_str)
+            final_topics = []
+            chosen_ids = set()
+
+            for slot_info in curated_slots:
+                cid = slot_info.get("candidate_id")
+                if cid and 1 <= cid <= len(unposted_candidates) and cid not in chosen_ids:
+                    orig = dict(unposted_candidates[cid - 1])
+                    orig["target_field"] = slot_info.get("field", "Tech Intelligence")
+                    orig["curation_rationale"] = slot_info.get("rationale", "")
+                    orig["groq_curated"] = True
+                    final_topics.append(orig)
+                    chosen_ids.add(cid)
+
+            if len(final_topics) >= 3:
+                logger.info(f"Groq successfully curated {len(final_topics)} top stories from Twitter/X and tech feeds.")
+                return final_topics[:3]
+            else:
+                logger.warning(f"Groq returned {len(final_topics)} valid topics; supplementing with multi-field fallback.")
+                return self.get_daily_multi_field_topics()
+
+        except Exception as e:
+            logger.warning(f"Groq trend curation failed ({e}); falling back to heuristic multi-field selection.")
+            return self.get_daily_multi_field_topics()
 
     @staticmethod
     def validate_url(url: str) -> bool:
