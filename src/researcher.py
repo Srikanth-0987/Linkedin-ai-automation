@@ -120,7 +120,7 @@ RELEVANCE_KEYWORDS = [
     "llm", "agent", "agents", "reasoning", "benchmark", "open-source",
     "architecture", "deepseek", "qwen", "llama", "deepmind", "anthropic",
     "gemini", "openai", "neural", "weights", "fine-tuning", "rag",
-    "python", "compiler", "runtime", "github", "breakthrough", "dataset",
+    "python", "compiler", "runtime", "github", "breakthrough", "dataset","Data Centers","AI Infrastructure"
 ]
 
 
