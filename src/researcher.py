@@ -107,6 +107,12 @@ DEFAULT_RESEARCH_FEEDS = [
         "credibility_weight": 1.1,
     },
     {
+      "name" : "YCombinator",
+      "url":"https://www.ycombinator.com",
+      "catogory":"technology, entrepreneurship, and business scaling",
+      "credibility_weight":1.1
+    },
+    {
         "name": "VentureBeat AI",
         "url": "https://venturebeat.com/category/ai/feed/",
         "source_type": "secondary_press",
@@ -120,7 +126,10 @@ RELEVANCE_KEYWORDS = [
     "llm", "agent", "agents", "reasoning", "benchmark", "open-source",
     "architecture", "deepseek", "qwen", "llama", "deepmind", "anthropic",
     "gemini", "openai", "neural", "weights", "fine-tuning", "rag",
-    "python", "compiler", "runtime", "github", "breakthrough", "dataset","Data Centers","AI Infrastructure"
+    "python", "compiler", "runtime", "github", "breakthrough", "dataset","Data Centers","AI Infrastructure",
+    "PyTorch", "TensorFlow", "NumPy", "Pandas","ScikitLearn","HuggingFace","YC","YCombinator",
+    "AIMEngineer","MachineLearningEngineer","DataScientist","TechInternship", "FreshersJobs","ContinuousLearning"
+
 ]
 
 
@@ -693,6 +702,7 @@ EVERGREEN_TECHNICAL_CONCEPTS = [
         "source_name": "Python Architecture",
         "source_url": "https://docs.python.org/3/whatsnew/",
     },
+
     {
         "title": "Token Bucket vs Leaky Bucket Rate Limiting Algorithms",
         "summary": "Token bucket allows bursty traffic up to bucket capacity while leaky bucket enforces a strict constant output rate. Choosing the right algorithm protects API availability.",
@@ -714,6 +724,11 @@ EVERGREEN_TECHNICAL_CONCEPTS = [
         "category": "AI Industry & Startups",
         "source_name": "Engineering Architecture",
         "source_url": "https://github.com/features/actions",
+    },
+    {
+      "title" : "YCombinator",
+      "source url":"https://www.ycombinator.com",
+      "catogory":"technology, entrepreneurship, and business scaling",
     },
     {
         "title": "The Economics of Foundation Models: Open Weights vs Cloud APIs",
