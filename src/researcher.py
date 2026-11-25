@@ -25,10 +25,17 @@ from src.db import Database
 
 # Configurable public RSS feeds organized by category (100% free, no API keys or paid tiers required)
 DEFAULT_RESEARCH_FEEDS = [
-    # 1. Frontier AI Research & Open Models
+    # 1. Frontier AI Research & Open Models (Research)
     {
         "name": "arXiv Computer Science & AI",
         "url": "https://rss.arxiv.org/rss/cs.AI",
+        "source_type": "research_archive",
+        "category": "Frontier AI Research",
+        "credibility_weight": 1.3,
+    },
+    {
+        "name": "arXiv Machine Learning",
+        "url": "https://rss.arxiv.org/rss/cs.LG",
         "source_type": "research_archive",
         "category": "Frontier AI Research",
         "credibility_weight": 1.3,
@@ -40,7 +47,28 @@ DEFAULT_RESEARCH_FEEDS = [
         "category": "Open-Source AI & Models",
         "credibility_weight": 1.3,
     },
-    # 2. Tech Giants & AI Labs
+    # 2. Official AI Labs & Tech Companies (Official)
+    {
+        "name": "OpenAI News",
+        "url": "https://openai.com/news/rss.xml",
+        "source_type": "primary_lab",
+        "category": "Frontier AI Models",
+        "credibility_weight": 1.4,
+    },
+    {
+        "name": "Anthropic News",
+        "url": "https://www.anthropic.com/news/rss.xml",
+        "source_type": "primary_lab",
+        "category": "Frontier AI Models",
+        "credibility_weight": 1.4,
+    },
+    {
+        "name": "Google DeepMind",
+        "url": "https://deepmind.google/blog/rss.xml",
+        "source_type": "primary_lab",
+        "category": "AI Industry & Labs",
+        "credibility_weight": 1.4,
+    },
     {
         "name": "Google AI & DeepMind Blog",
         "url": "https://blog.google/technology/ai/rss/",
@@ -49,13 +77,85 @@ DEFAULT_RESEARCH_FEEDS = [
         "credibility_weight": 1.35,
     },
     {
+        "name": "NVIDIA Newsroom",
+        "url": "https://nvidianews.nvidia.com/releases.xml",
+        "source_type": "primary_company",
+        "category": "AI Infrastructure & Chips",
+        "credibility_weight": 1.35,
+    },
+    # 3. Global News & Policy (Global)
+    {
+        "name": "Reuters",
+        "url": "https://news.google.com/rss/search?q=site:reuters.com+technology+OR+AI&ceid=US:en&hl=en-US&gl=US",
+        "source_type": "global_press",
+        "category": "Global Tech & Business",
+        "credibility_weight": 1.3,
+    },
+    {
+        "name": "Associated Press",
+        "url": "https://news.google.com/rss/search?q=site:apnews.com+technology+OR+AI&ceid=US:en&hl=en-US&gl=US",
+        "source_type": "global_press",
+        "category": "Global Tech & Policy",
+        "credibility_weight": 1.3,
+    },
+    {
+        "name": "BBC",
+        "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+        "source_type": "global_press",
+        "category": "Global Tech & Innovation",
+        "credibility_weight": 1.25,
+    },
+    {
+        "name": "Bloomberg",
+        "url": "https://feeds.bloomberg.com/technology/news.rss",
+        "source_type": "global_press",
+        "category": "Global Tech & Markets",
+        "credibility_weight": 1.3,
+    },
+    # 4. Technology Publications (Technology)
+    {
         "name": "MIT Technology Review AI",
         "url": "https://www.technologyreview.com/feed/",
         "source_type": "research_archive",
         "category": "AI Industry & Labs",
         "credibility_weight": 1.25,
     },
-    # 3. Python, Engineering & GitHub
+    {
+        "name": "TechCrunch",
+        "url": "https://techcrunch.com/feed/",
+        "source_type": "secondary_press",
+        "category": "Technology & Startups",
+        "credibility_weight": 1.15,
+    },
+    {
+        "name": "TechCrunch AI",
+        "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "source_type": "secondary_press",
+        "category": "AI Industry & Startups",
+        "credibility_weight": 1.1,
+    },
+    {
+        "name": "The Verge",
+        "url": "https://www.theverge.com/rss/index.xml",
+        "source_type": "secondary_press",
+        "category": "Technology & Consumer Tech",
+        "credibility_weight": 1.15,
+    },
+    {
+        "name": "Wired",
+        "url": "https://www.wired.com/feed/rss",
+        "source_type": "secondary_press",
+        "category": "Technology & Science",
+        "credibility_weight": 1.2,
+    },
+    {
+        "name": "VentureBeat AI",
+        "url": "https://venturebeat.com/category/ai/feed/",
+        "source_type": "secondary_press",
+        "category": "AI Industry & Startups",
+        "credibility_weight": 1.1,
+    },
+    # 5. Python, Engineering & GitHub
     {
         "name": "GitHub Blog & Releases",
         "url": "https://github.blog/feed/",
@@ -70,7 +170,7 @@ DEFAULT_RESEARCH_FEEDS = [
         "category": "Python & Software Engineering",
         "credibility_weight": 1.3,
     },
-    # 4. Tech Communities & Viral Discussions (Including X/Twitter tech debates)
+    # 6. Tech Communities & Viral Discussions (Including X/Twitter tech debates)
     {
         "name": "X.com Trending Tech Discussions",
         "url": "https://hnrss.org/newest?q=x.com",
@@ -100,23 +200,10 @@ DEFAULT_RESEARCH_FEEDS = [
         "credibility_weight": 1.15,
     },
     {
-        "name": "TechCrunch AI",
-        "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
-        "source_type": "secondary_press",
-        "category": "AI Industry & Startups",
-        "credibility_weight": 1.1,
-    },
-    {
-      "name" : "YCombinator",
-      "url":"https://www.ycombinator.com",
-      "catogory":"technology, entrepreneurship, and business scaling",
-      "credibility_weight":1.1
-    },
-    {
-        "name": "VentureBeat AI",
-        "url": "https://venturebeat.com/category/ai/feed/",
-        "source_type": "secondary_press",
-        "category": "AI Industry & Startups",
+        "name": "YCombinator",
+        "url": "https://www.ycombinator.com/blog/rss/",
+        "source_type": "primary_company",
+        "category": "Technology, Entrepreneurship & Business Scaling",
         "credibility_weight": 1.1,
     },
 ]
